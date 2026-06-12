@@ -1,0 +1,2621 @@
+{
+  "name": "TroopMessenger - Complete Lead Generation (Groq+Gemini)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 2
+            }
+          ]
+        }
+      },
+      "id": "25dfabe8-3c4d-4180-91f9-158d66f6d522",
+      "name": "Every 4 Hours1",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -3728,
+        2560
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "var serperApiKey = \"YOUR_SERPER_API_KEY\";\nvar TARGET_WARMUP = 5;\n\nvar warmupSubreddits = [\n  \"cricket\",\"bollywood\",\"india\",\"movies\",\"gaming\",\n  \"funny\",\"television\",\"sports\",\"Football\",\"IndianCinema\"\n];\n\n// General non-TroopMessenger keywords for warmup \u2014 just casual browsing topics\nvar warmupKeywords = [\n  \"best moments\", \"recommendations\", \"thoughts on\",\n  \"favourite\", \"what do you think\", \"discussion\",\n  \"top picks\", \"unpopular opinion\", \"best of\", \"anyone else\"\n];\n\nvar allPosts = [];\nvar seenIds = {};\n\nfunction cleanTitle(raw) {\n  return (raw || \"\").replace(/ ?[-|] ?Reddit$/i, \"\").replace(/ ?[-|] ?r\\/\\w+$/i, \"\").trim();\n}\n\nfunction extractSubreddit(url) {\n  var match = (url || \"\").match(/reddit\\.com\\/r\\/([^\\/]+)/i);\n  return match ? match[1] : \"unknown\";\n}\n\nfor (var i = 0; i < warmupSubreddits.length; i++) {\n  if (allPosts.length >= TARGET_WARMUP) break;\n\n  var sub = warmupSubreddits[i];\n  var kw  = warmupKeywords[i % warmupKeywords.length];\n  var query = \"site:reddit.com/r/\" + sub + \" \" + kw;\n\n  try {\n    var res = await this.helpers.httpRequest({\n      method: \"POST\",\n      url: \"https://google.serper.dev/search\",\n      headers: { \"X-API-KEY\": serperApiKey, \"Content-Type\": \"application/json\" },\n      body: JSON.stringify({ q: query, num: 5, tbs: \"qdr:m\" }),\n      returnFullResponse: false\n    });\n\n    var results = res.organic || [];\n    for (var j = 0; j < results.length; j++) {\n      if (allPosts.length >= TARGET_WARMUP) break;\n      var link = results[j].link || \"\";\n      if (link.indexOf(\"reddit.com\") === -1) continue;\n      if (link.indexOf(\"/comments/\") === -1) continue;\n      var parts = link.split(\"/\");\n      var id = \"warmup_reddit_\" + (parts[parts.length - 2] || parts[parts.length - 1]);\n      if (seenIds[id]) continue;\n      seenIds[id] = true;\n      allPosts.push({\n        json: {\n          POST_ID:   id,\n          title:     cleanTitle(results[j].title),\n          text:      results[j].snippet || \"\",\n          url:       link,\n          subreddit: extractSubreddit(link),\n          author:    \"unknown\",\n          post_type: \"random_warmup\"\n        }\n      });\n    }\n  } catch(e) {}\n\n  await new Promise(function(r) { setTimeout(r, 500); });\n}\n\nif (allPosts.length === 0) {\n  return [{ json: { _skip: true, reason: \"No warmup posts fetched\" } }];\n}\n\nreturn allPosts;"
+      },
+      "id": "672648d0-5db6-4787-b697-dc6ea32c77aa",
+      "name": "Fetch Random Warmup Posts1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3440,
+        2224
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "eb062ad1-6ea5-4559-953e-3784d788f239",
+      "name": "Loop Over Warmup Posts1",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -3200,
+        2208
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "id": "4c0e36ac-c5f3-49e4-b926-ef34ddbebe7f",
+      "name": "Wait 3s Warmup Rate Limit3",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -2960,
+        2224
+      ],
+      "webhookId": "warmup-wait-webhook-1"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "var postId    = String($json.POST_ID   || \"\");\nvar title     = String($json.title     || \"\");\nvar text      = String($json.text      || \"\");\nvar subreddit = String($json.subreddit || \"\");\nvar url       = String($json.url       || \"\");\nvar author    = String($json.author    || \"\");\nvar rawText   = text || title || \"No content\";\nvar trimmed   = rawText.length > 500 ? rawText.substring(0, 500).split(\" \").slice(0,-1).join(\" \")+\"...\" : rawText;\nreturn {\n  POST_ID: postId, title: title, text: text,\n  subreddit: subreddit, url: url, author: author,\n  selected_groq_key: \"Bearer YOUR_GROQ_API_KEY_3\",\n  groq_body: {\n    model: \"llama-3.3-70b-versatile\", temperature: 0.9,\n    messages: [\n      { role: \"system\", content: \"You are a genuine Reddit user. Write a very short, casual, human reply (1-2 sentences max). Sound natural and conversational. No product mentions. No links. No hashtags. Just a genuine human reaction.\" },\n      { role: \"user\",   content: \"Write a casual reply to this post:\\n\\nSubreddit: r/\" + subreddit + \"\\n\\nTitle: \" + title + \"\\n\\nText: \" + trimmed }\n    ]\n  }\n};"
+      },
+      "id": "44af8c93-b105-4d12-b416-9ed44f6d0b76",
+      "name": "Generate Casual Warmup Reply1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2720,
+        2224
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.selected_groq_key }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.groq_body }}",
+        "options": {}
+      },
+      "id": "0a4d65e3-2307-4036-82b8-f84588143fad",
+      "name": "Groq API Warmup Reply Key ",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2480,
+        2224
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "var source = $('Generate Casual Warmup Reply1').item.json;\ntry {\n  var content = $json.choices[0].message.content || \"\";\n  content = content.replace(/^```(?:json)?\\s*/i,\"\").replace(/```\\s*$/i,\"\").trim();\n  return { POST_ID: source.POST_ID||\"\", title: source.title||\"\", text: source.text||\"\", url: source.url||\"\", subreddit: source.subreddit||\"\", author: source.author||\"\", warmup_reply: content };\n} catch(e) {\n  return { POST_ID: source.POST_ID||\"\", title: source.title||\"\", url: source.url||\"\", subreddit: source.subreddit||\"\", author: source.author||\"\", warmup_reply: \"\" };\n}"
+      },
+      "id": "795f5f54-d56f-4a96-9554-fa7b4e718e6c",
+      "name": "Parse Warmup Reply Text1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2240,
+        2224
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1-MVY_KhE7Ac0YSmoKhv24KE1x-lGZ6HBr8mbLlHPxrw",
+          "mode": "list",
+          "cachedResultName": "TroopMessenger Leads Database"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1930112756,
+          "mode": "list",
+          "cachedResultName": "Reddit_Warmup_Posts"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "POST_ID ",
+              "lookupValue": "={{ $('Generate Casual Warmup Reply1').item.json.POST_ID }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "be7a8496-f561-4005-812f-a43cec683af2",
+      "name": "Check If Warmup Post Already Saved1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -2000,
+        2224
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "warmup-dup-cond",
+              "leftValue": "={{ $json.POST_ID }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "885822ac-e619-4411-be4f-fbcc4519ef7c",
+      "name": "Warmup Duplicate Check New Post Only1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1760,
+        2224
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1-MVY_KhE7Ac0YSmoKhv24KE1x-lGZ6HBr8mbLlHPxrw",
+          "mode": "list",
+          "cachedResultName": "TroopMessenger Leads Database"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1930112756,
+          "mode": "list",
+          "cachedResultName": "Reddit_Warmup_Posts"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "POST_ID ": "={{ $('Generate Casual Warmup Reply1').item.json.POST_ID }}",
+            "Title": "={{ $('Generate Casual Warmup Reply1').item.json.title }}",
+            "URL": "={{ $('Generate Casual Warmup Reply1').item.json.url }}",
+            "Subreddit": "={{ $('Generate Casual Warmup Reply1').item.json.subreddit }}",
+            "Author": "={{ $('Generate Casual Warmup Reply1').item.json.author }}",
+            "Warmup_Reply": "={{ $('Parse Warmup Reply Text1').item.json.warmup_reply }}",
+            "Reply_Posted": "No"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "POST_ID ",
+              "displayName": "POST_ID ",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Title",
+              "displayName": "Title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "URL",
+              "displayName": "URL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Subreddit",
+              "displayName": "Subreddit",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Author",
+              "displayName": "Author",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Warmup_Reply",
+              "displayName": "Warmup_Reply",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Assigned_Account",
+              "displayName": "Assigned_Account",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Reply_Posted",
+              "displayName": "Reply_Posted",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Reply_Date",
+              "displayName": "Reply_Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Notes",
+              "displayName": "Notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "6ba11c85-f81b-4d7f-8f40-0923a7a020a7",
+      "name": "Save to Reddit Warmup Posts Sheet1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -1520,
+        2208
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "prathameshmohiteattendance.ai@gmail.com",
+        "subject": "={{ \"New Warmup Post Saved - r/\" + $('Generate Casual Warmup Reply1').item.json.subreddit }}",
+        "message": "={{ \"<h2>Warmup Post Ready</h2><table border='1' cellpadding='8' style='border-collapse:collapse;'><tr><td><b>Subreddit</b></td><td>r/\" + $('Generate Casual Warmup Reply1').item.json.subreddit + \"</td></tr><tr><td><b>Title</b></td><td>\" + $('Generate Casual Warmup Reply1').item.json.title + \"</td></tr><tr><td><b>URL</b></td><td><a href='\" + $('Generate Casual Warmup Reply1').item.json.url + \"'>Open Post</a></td></tr><tr><td><b>Reply</b></td><td><i>\" + $('Parse Warmup Reply Text1').item.json.warmup_reply + \"</i></td></tr></table>\" }}",
+        "options": {}
+      },
+      "id": "9d278756-31e6-4ec1-a30e-e88010d13ec8",
+      "name": "Gmail Alert New Warmup Post1",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -1280,
+        2208
+      ],
+      "webhookId": "warmup-gmail-webhook-1",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "var serperApiKey = \"YOUR_SERPER_API_KEY\";\nvar TARGET_POSTS = 300;\n\n// Shuffle function\nfunction shuffle(arr) {\n  var a = arr.slice();\n  for (var i = a.length - 1; i > 0; i--) {\n    var j = Math.floor(Math.random() * (i + 1));\n    var tmp = a[i]; a[i] = a[j]; a[j] = tmp;\n  }\n  return a;\n}\n\n// Shuffled on every run\nvar subreddits = shuffle([\n  \"sysadmin\",\"msp\",\"remotework\",\"Slack\",\"startups\",\"smallbusiness\",\"Entrepreneur\",\n  \"remoteteams\",\"projectmanagement\",\"ProductManagement\",\"humanresources\",\"ITManagers\",\n  \"SaaS\",\"EntrepreneurRideAlong\",\"cofoundr\",\"microsaas\",\"developersIndia\",\"Selfhosted\",\n  \"MicrosoftTeams\",\"Cybersecurity\",\"Privacy\",\"Productivity\",\"Devops\",\"IndianStartups\",\n  \"cscareerquestionsIN\",\"india_business\",\"IndiaTech\",\"hyderabad\",\"bangalore\",\"mumbai\",\"delhi\"\n]);\n\nvar keywords = shuffle([\n  \"self hosted team chat\",\n  \"on premise team chat\",\n  \"self hosted messaging app\",\n  \"on premise chat server\",\n  \"self hosted instant messaging\",\n  \"private team chat server\",\n  \"on prem collaboration software\",\n  \"self hosted communication tool\",\n  \"self hosted slack alternative\",\n  \"slack alternative self hosted\",\n  \"self hosted teams alternative\",\n  \"microsoft teams alternative self hosted\",\n  \"mattermost alternative\",\n  \"rocket.chat alternative\",\n  \"on premise slack alternative\",\n  \"data sovereignty messaging\",\n  \"data residency messaging\",\n  \"secure enterprise messaging\",\n  \"encrypted team messaging\",\n  \"end to end encrypted team chat\",\n  \"HIPAA compliant messaging\",\n  \"GDPR compliant chat\",\n  \"compliant messaging platform\",\n  \"air gapped messaging\",\n  \"air gapped chat\",\n  \"intranet messaging\",\n  \"offline messaging server\",\n  \"private network chat\",\n  \"self hosted chat docker\",\n  \"LDAP chat application\",\n  \"active directory messaging\",\n  \"enterprise chat server on premise\",\n  \"white label chat app\",\n  \"white label messaging platform\",\n  \"team messaging\",\n  \"Slack alternative\",\n  \"WhatsApp alternative\",\n  \"team communication tool\",\n  \"internal messaging\",\n  \"team chat\",\n  \"data sovereignty\"\n]);\n\nvar allPosts = [];\nvar seenIds = {};\n\n// ... rest of your code stays exactly the same\n\nfunction cleanTitle(raw) {\n  return (raw || \"\").replace(/ ?[-|] ?Reddit$/i, \"\").replace(/ ?[-|] ?r\\/\\w+$/i, \"\").trim();\n}\nfunction extractSubreddit(url) {\n  var match = (url || \"\").match(/reddit\\.com\\/r\\/([^\\/]+)/i);\n  return match ? match[1] : \"unknown\";\n}\nfunction processResults(results, fetchType) {\n  for (var j = 0; j < results.length; j++) {\n    if (allPosts.length >= TARGET_POSTS) break;\n    var link = results[j].link || \"\";\n    if (link.indexOf(\"reddit.com\") === -1) continue;\n    if (link.indexOf(\"/comments/\") === -1) continue;\n    var parts = link.split(\"/\");\n    var id = \"reddit_\" + (parts[parts.length - 2] || parts[parts.length - 1]);\n    if (seenIds[id]) continue;\n    seenIds[id] = true;\n    allPosts.push({\n      json: {\n        POST_ID:      id,\n        title:        cleanTitle(results[j].title),\n        text:         results[j].snippet || \"\",\n        url:          link,\n        subreddit:    extractSubreddit(link),\n        platform:     \"reddit\",\n        author:       \"unknown\",\n        score:        0,\n        num_comments: 0,\n        created_utc:  Date.now(),\n        fetch_type:   fetchType\n      }\n    });\n  }\n}\n\n// Iterate every subreddit \u00d7 every keyword\nouter:\nfor (var i = 0; i < subreddits.length; i++) {\n  var sub = subreddits[i];\n\n  for (var k = 0; k < keywords.length; k++) {\n    if (allPosts.length >= TARGET_POSTS) break outer;\n\n    var query = \"site:reddit.com/r/\" + sub + \" \" + keywords[k];\n\n    try {\n      var recentRes = await this.helpers.httpRequest({\n        method: \"POST\",\n        url: \"https://google.serper.dev/search\",\n        headers: { \"X-API-KEY\": serperApiKey, \"Content-Type\": \"application/json\" },\n        body: JSON.stringify({ q: query, num: 10, tbs: \"qdr:m3\" }),\n        returnFullResponse: false\n      });\n      processResults(recentRes.organic || [], \"recent\");\n    } catch(e) {}\n\n    await new Promise(function(r) { setTimeout(r, 400); });\n    if (allPosts.length >= TARGET_POSTS) break outer;\n\n    try {\n      var topRes = await this.helpers.httpRequest({\n        method: \"POST\",\n        url: \"https://google.serper.dev/search\",\n        headers: { \"X-API-KEY\": serperApiKey, \"Content-Type\": \"application/json\" },\n        body: JSON.stringify({ q: query, num: 10 }),\n        returnFullResponse: false\n      });\n      processResults(topRes.organic || [], \"top\");\n    } catch(e) {}\n\n    await new Promise(function(r) { setTimeout(r, 400); });\n  }\n}\n\nif (allPosts.length === 0) {\n  return [{ json: { _skip: true, reason: \"No posts fetched\" } }];\n}\n\nallPosts.sort(function(a, b) {\n  var aR = a.json.fetch_type === \"recent\" ? 1 : 0;\n  var bR = b.json.fetch_type === \"recent\" ? 1 : 0;\n  return bR - aR;\n});\n\nreturn allPosts;"
+      },
+      "id": "a3dc1eda-900d-4540-a3bb-6a48624918f3",
+      "name": "Fetch Reddit Posts1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3456,
+        2560
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1-MVY_KhE7Ac0YSmoKhv24KE1x-lGZ6HBr8mbLlHPxrw",
+          "mode": "list",
+          "cachedResultName": "TroopMessenger Leads Database"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Reddit_Leads",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-MVY_KhE7Ac0YSmoKhv24KE1x-lGZ6HBr8mbLlHPxrw/edit#gid=0"
+        },
+        "options": {}
+      },
+      "id": "b7f28932-e776-41ca-a886-608081085475",
+      "name": "Reddit Get All Known POST IDs1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -3216,
+        2560
+      ],
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Get the Google Sheet rows from the immediate previous node\nconst sheetRows = $input.all();\n\n// 2. Explicitly pull the raw Reddit posts from the first node\n// Make sure \"Fetch Reddit Posts1\" perfectly matches the name of Node 1\nconst fetchedPosts = $('Fetch Reddit Posts1').all();\n\n// 3. Safety check: Did Node 1 actually fetch anything?\nif (!fetchedPosts || fetchedPosts.length === 0 || (fetchedPosts[0].json && fetchedPosts[0].json._skip)) {\n  return [{ json: { _skip: true, message: \"No raw posts found from Reddit input\" } }];\n}\n\n// 4. Build a Set of known POST_IDs from the Google Sheet\nconst knownIds = new Set();\nsheetRows.forEach(row => {\n  const id = String(row.json.POST_ID || \"\").trim();\n  if (id) knownIds.add(id);\n});\n\n// 5. Filter the fetched posts: keep only those NOT in the knownIds set\nconst newPosts = fetchedPosts.filter(p => {\n  const id = String(p.json.POST_ID || \"\").trim();\n  return id && !knownIds.has(id);\n});\n\n// 6. Stop if all posts are already in the database\nif (newPosts.length === 0) {\n  return [{ json: { _skip: true, message: \"All fetched posts already exist in Google Sheets\" } }];\n}\n\n// 7. Output only the genuinely new posts\nreturn newPosts;"
+      },
+      "id": "0500e9be-d661-4887-a24d-84f7208f9ceb",
+      "name": "Reddit Pre-filter New Posts Only1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2976,
+        2560
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "b5be1abf-98b1-4460-8856-533915c3ebcc",
+      "name": "Reddit Loop Over Posts1",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -2736,
+        2544
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "if ($json._skip === true || !$json.POST_ID) {\n  return { _skip: true };\n}\n\nvar postId      = String($json.POST_ID      || \"\");\nvar title       = String($json.title        || \"\");\nvar text        = String($json.text         || \"\");\nvar subreddit   = String($json.subreddit    || \"\");\nvar url         = String($json.url          || \"\");\nvar author      = String($json.author       || \"\");\nvar score       = Number($json.score        || 0);\nvar createdUtc  = Number($json.created_utc  || 0);\nvar numComments = Number($json.num_comments || 0);\nvar fetchType   = String($json.fetch_type   || \"\");\n\nvar words     = (text || title || \"No content\").split(\" \");\nvar truncated = words.slice(0, 120).join(\" \") + (words.length > 120 ? \"...\" : \"\");\n\nvar systemPrompt = \"You are a lead scoring AI for Troop Messenger - a secure, self-hosted B2B team communication platform.\\n\\n\"\n  + \"Troop Messenger core strengths: self-hosted/on-premise deployment, data sovereignty, air-gapped network support, \"\n  + \"end-to-end encryption, LDAP/Active Directory integration, white-label options, HIPAA/GDPR compliance, Docker deployment.\\n\\n\"\n  + \"SCORE 1.0 - Perfect lead (pitch immediately):\\n\"\n  + \"- Explicitly asking for self-hosted, on-premise, or air-gapped team chat\\n\"\n  + \"- Looking for Slack/Teams/Mattermost/Rocket.Chat alternative with data control\\n\"\n  + \"- Concerned about data sovereignty, data residency, or GDPR/HIPAA compliance for messaging\\n\"\n  + \"- Sysadmin/IT manager evaluating secure enterprise messaging or LDAP-integrated chat\\n\"\n  + \"- Company banned WhatsApp/Slack due to security/compliance policy\\n\"\n  + \"- Actively shopping for white-label or private-network chat solution\\n\"\n  + \"- Advocating self-hosted software to reduce SaaS costs\\n\"\n  + \"- Discussing open source or self-hosted alternatives to paid tools\\n\\n\"\n  + \"SCORE 0.8 - Strong lead:\\n\"\n  + \"- Slack/Teams too expensive, evaluating alternatives (even without self-host requirement)\\n\"\n  + \"- Privacy concerns about SaaS messaging tools (data going to third-party servers)\\n\"\n  + \"- Remote/distributed team struggling with communication and considering a switch\\n\"\n  + \"- CTO/IT head/founder evaluating team communication stack\\n\"\n  + \"- Unhappy with Mattermost or Rocket.Chat (direct competitor switchers)\\n\"\n  + \"- Asking about Docker-deployable or LDAP-compatible chat tools\\n\"\n  + \"- General frustration with SaaS costs or vendor lock-in for business tools\\n\"\n  + \"- Discussing reducing monthly software spend across the business\\n\\n\"\n  + \"SCORE 0.6 - Possible lead:\\n\"\n  + \"- General team communication pain (no specific tool mentioned)\\n\"\n  + \"- WhatsApp used for business causing problems but no clear switch intent\\n\"\n  + \"- Startup/SMB founder frustrated with current communication setup\\n\"\n  + \"- Mentions security or privacy concerns loosely without active evaluation\\n\"\n  + \"- General interest in open source or self-hosted software\\n\\n\"\n  + \"SCORE 0.0 - Not a lead:\\n\"\n  + \"- Completely unrelated to business software, team tools, or communication\\n\"\n  + \"- Personal life, relationships, health, entertainment topics\\n\"\n  + \"- Pure coding/hiring/finance/legal/GST with zero software evaluation angle\\n\"\n  + \"- Happy with current tool and not evaluating anything new\\n\\n\"\n  + \"CRITICAL RULES:\\n\"\n  + \"- A post about reducing SaaS costs or moving to self-hosted software IS a lead - Troop Messenger is self-hosted.\\n\"\n  + \"- A post about open source alternatives to paid software IS a lead.\\n\"\n  + \"- Do NOT require the post to explicitly mention messaging or chat to score above 0.0.\\n\"\n  + \"- When in doubt between 0.0 and 0.6, choose 0.6 - it is better to keep a possible lead than lose it.\\n\"\n  + \"- Only score 0.0 if there is truly zero connection to business software or team tools.\\n\\n\"\n  + \"INTENT LABELS (pick one):\\n\"\n  + \"self_hosted_search | competitor_switch | compliance_need | privacy_concern | \"\n  + \"air_gap_need | cost_reduction | feature_gap | general_comms_pain | no_intent\\n\\n\"\n  + \"URGENCY:\\n\"\n  + \"high = actively evaluating or switching NOW\\n\"\n  + \"medium = researching or planning to switch\\n\"\n  + \"low = venting or casually curious\\n\\n\"\n  + \"Return ONLY valid JSON, no markdown, no extra text:\\n\"\n  + \"{\\\"score\\\": 0.0, \\\"intent\\\": \\\"no_intent\\\", \\\"urgency\\\": \\\"low\\\", \\\"poster_role\\\": \\\"unknown\\\", \\\"pain_points\\\": [], \\\"team_size_hint\\\": \\\"unknown\\\", \\\"tools_mentioned\\\": [], \\\"is_decision_maker\\\": false, \\\"deployment_preference\\\": \\\"unknown\\\", \\\"compliance_needs\\\": [], \\\"outreach_angle\\\": \\\"\\\", \\\"disqualified\\\": true}\";\n\nvar userMessage = \"Analyze this Reddit post in r/\" + subreddit + \" and score it as a potential Troop Messenger lead.\\n\\n\"\n  + \"Title: \" + title + \"\\n\"\n  + \"Content: \" + truncated + \"\\n\\n\"\n  + \"Pay special attention if the post mentions: self-hosting, on-premise, air-gap, data sovereignty, \"\n  + \"LDAP, Docker, HIPAA, GDPR, Mattermost, Rocket.Chat, dissatisfaction with Slack/Teams pricing or privacy, \"\n  + \"SaaS costs, vendor lock-in, open source alternatives, or reducing monthly software spend.\";\n\nreturn {\n  POST_ID:      postId,\n  title:        title,\n  text:         text,\n  url:          url,\n  subreddit:    subreddit,\n  score:        score,\n  author:       author,\n  created_utc:  createdUtc,\n  num_comments: numComments,\n  platform:     \"reddit\",\n  fetch_type:   fetchType,\n  selected_groq_key: \"Bearer YOUR_GROQ_API_KEY_1\",\n  groq_body: JSON.stringify({\n    model: \"llama-3.1-8b-instant\",\n    temperature: 0.1,\n    messages: [\n      { role: \"system\", content: systemPrompt },\n      { role: \"user\",   content: userMessage  }\n    ]\n  })\n};"
+      },
+      "id": "8d24c2d5-94f9-41ba-a42a-a6171c18d22e",
+      "name": "Reddit Build Groq Body1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2256,
+        2560
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "var builder = $('Reddit Build Groq Body1').item.json;\ntry {\n  var content = $json.choices[0].message.content || \"\";\n  if (!content) throw new Error(\"No content\");\n  content = content.replace(/^```(?:json)?\\s*/i,\"\").replace(/```\\s*$/i,\"\").trim();\n  var start = content.indexOf(\"{\"); var end = content.lastIndexOf(\"}\");\n  if (start===-1||end===-1) throw new Error(\"No JSON\");\n  var parsed = JSON.parse(content.substring(start, end+1));\n  return {\n    POST_ID: builder.POST_ID, title: builder.title, text: builder.text, url: builder.url,\n    subreddit: builder.subreddit, score: builder.score, author: builder.author,\n    created_utc: builder.created_utc, num_comments: builder.num_comments,\n    platform: \"reddit\", fetch_type: builder.fetch_type,\n    groq_score:        typeof parsed.score===\"number\" ? Math.min(1,Math.max(0,parsed.score)) : 0,\n    intent:            parsed.intent         || \"unknown\",\n    urgency:           parsed.urgency        || \"low\",\n    poster_role:       parsed.poster_role    || \"unknown\",\n    pain_points:       Array.isArray(parsed.pain_points)   ? parsed.pain_points.join(\", \")   : \"\",\n    team_size_hint:    parsed.team_size_hint || \"unknown\",\n    tools_mentioned:   Array.isArray(parsed.tools_mentioned) ? parsed.tools_mentioned.join(\", \") : \"\",\n    is_decision_maker: parsed.is_decision_maker || false,\n    outreach_angle:    parsed.outreach_angle || \"\",\n    disqualified:      parsed.disqualified   || false\n  };\n} catch(e) {\n  return {\n    POST_ID: builder.POST_ID, title: builder.title, text: builder.text, url: builder.url,\n    subreddit: builder.subreddit, score: builder.score, author: builder.author,\n    created_utc: builder.created_utc, num_comments: builder.num_comments,\n    platform: \"reddit\", fetch_type: builder.fetch_type,\n    groq_score: 0, intent: \"parse_error\", urgency: \"low\", poster_role: \"unknown\",\n    pain_points: \"\", team_size_hint: \"unknown\", tools_mentioned: \"\",\n    is_decision_maker: false, outreach_angle: \"\", disqualified: true\n  };\n}"
+      },
+      "id": "261509c3-1f77-49e2-b075-466fb59309b8",
+      "name": "Reddit Parse Groq Score1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1536,
+        2544
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "if ($json._skip === true || !$json.POST_ID) {\n  return { _skip: true };\n}\n\nvar d = $json;\n\nvar words     = (d.text || d.title || \"No content\").split(\" \");\nvar truncated = words.slice(0, 120).join(\" \") + (words.length > 120 ? \"...\" : \"\");\n\nvar systemPrompt = \"You are a lead validation AI for Troop Messenger - a secure, self-hosted B2B team communication platform.\\n\\n\"\n  + \"Troop Messenger core strengths: self-hosted/on-premise deployment, data sovereignty, air-gapped network support, \"\n  + \"end-to-end encryption, LDAP/Active Directory integration, white-label options, HIPAA/GDPR compliance, Docker deployment.\\n\\n\"\n  + \"A first AI scored this post as a potential lead. Your job:\\n\"\n  + \"1. Verify the score - confirm, raise, lower, or disqualify.\\n\"\n  + \"2. Write a reply draft ONLY if confirmed score >= 0.6.\\n\\n\"\n  + \"SCORE GUIDE:\\n\"\n  + \"1.0 - Perfect. Actively asking for self-hosted/on-premise/air-gapped team chat, evaluating Slack/Teams alternatives \"\n  + \"with data sovereignty concerns, explicitly shopping for LDAP/Docker/white-label messaging, \"\n  + \"or advocating self-hosted software to reduce SaaS costs.\\n\"\n  + \"0.8 - Strong. Clear dissatisfaction with SaaS pricing or privacy, remote team struggling with comms, \"\n  + \"CTO/IT head evaluating messaging stack, competitor (Mattermost/Rocket.Chat) switcher, \"\n  + \"discussing open source alternatives to paid tools, frustrated with vendor lock-in.\\n\"\n  + \"0.6 - Marginal. Vague communication pain, casual privacy concerns, general frustration with SaaS costs, \"\n  + \"general interest in self-hosted or open source software, no explicit switch intent.\\n\"\n  + \"0.0 - Disqualify. Completely unrelated to business software, team tools, or communication. \"\n  + \"Personal life, relationships, health, entertainment, or pure coding/HR/finance/legal with zero software evaluation angle.\\n\\n\"\n  + \"CRITICAL SCORING RULES:\\n\"\n  + \"- A post about reducing SaaS costs or moving to self-hosted software IS a lead - Troop Messenger is self-hosted.\\n\"\n  + \"- A post about open source alternatives to paid software IS a lead.\\n\"\n  + \"- Do NOT require the post to explicitly mention messaging or chat to keep it as a lead.\\n\"\n  + \"- Do NOT disqualify just because the post is general - if Troop Messenger could naturally fit, keep it.\\n\"\n  + \"- Do not over-penalise for vague language. A frustrated IT manager not naming Slack is still a lead.\\n\"\n  + \"- Do not confirm just because the first AI did - re-read the post independently.\\n\"\n  + \"- When in doubt between 0.0 and 0.6, choose 0.6 - it is better to keep a possible lead than lose it.\\n\"\n  + \"- Only disqualify if there is truly zero connection to business software evaluation or team tools.\\n\\n\"\n  + \"REPLY DRAFT RULES (only write if confirmed_score >= 0.6):\\n\"\n  + \"- Max 3 sentences. Sound like a real person on Reddit, not a salesperson.\\n\"\n  + \"- Open with empathy toward their specific pain point.\\n\"\n  + \"- Mention Troop Messenger once, naturally - as a suggestion, not a pitch.\\n\"\n  + \"- If the post mentions self-hosting, data control, or LDAP - highlight those strengths specifically.\\n\"\n  + \"- If the post is about SaaS costs - mention that Troop Messenger is self-hosted and eliminates per-seat SaaS fees.\\n\"\n  + \"- If the post is about open source - mention that Troop Messenger gives full data control like open source but with enterprise support.\\n\"\n  + \"- If confirmed_score < 0.6, set reply_draft to empty string.\\n\\n\"\n  + \"Return ONLY valid JSON, no markdown, no extra text:\\n\"\n  + \"{\\\"confirmed_score\\\": 0.0, \\\"reply_draft\\\": \\\"\\\", \\\"confirmation_reason\\\": \\\"\\\"}\";\n\nvar userMessage = \"Validate this Reddit post. The first-stage AI scored it \" + d.groq_score + \".\\n\\n\"\n  + \"Subreddit: r/\" + d.subreddit + \"\\n\"\n  + \"Title: \" + d.title + \"\\n\"\n  + \"Text: \" + truncated + \"\\n\\n\"\n  + \"First-stage context:\\n\"\n  + \"- Intent: \" + d.intent + \"\\n\"\n  + \"- Urgency: \" + d.urgency + \"\\n\"\n  + \"- Poster role: \" + d.poster_role + \"\\n\"\n  + \"- Pain points: \" + (Array.isArray(d.pain_points) ? d.pain_points.join(\", \") : d.pain_points) + \"\\n\"\n  + \"- Tools mentioned: \" + (Array.isArray(d.tools_mentioned) ? d.tools_mentioned.join(\", \") : d.tools_mentioned) + \"\\n\"\n  + \"- Deployment preference: \" + (d.deployment_preference || \"unknown\") + \"\\n\\n\"\n  + \"Re-read the post independently. Confirm or correct the score. \"\n  + \"If confirmed >= 0.6, write a reply that addresses their specific pain point and mentions Troop Messenger naturally. \"\n  + \"Remember: when in doubt between keeping and disqualifying, keep the lead.\";\n\nreturn {\n  POST_ID:      d.POST_ID,\n  title:        d.title,\n  text:         d.text,\n  url:          d.url,\n  subreddit:    d.subreddit,\n  score:        d.score,\n  author:       d.author,\n  created_utc:  d.created_utc,\n  num_comments: d.num_comments,\n  platform:     \"reddit\",\n  fetch_type:   d.fetch_type,\n  groq_score:        d.groq_score,\n  intent:            d.intent,\n  urgency:           d.urgency,\n  poster_role:       d.poster_role,\n  pain_points:       d.pain_points,\n  team_size_hint:    d.team_size_hint,\n  tools_mentioned:   d.tools_mentioned,\n  is_decision_maker: d.is_decision_maker,\n  outreach_angle:    d.outreach_angle,\n  chat_body: JSON.stringify({\n    model:       \"gpt-3.5-turbo\",\n    temperature: 0.2,\n    messages: [\n      { role: \"system\", content: systemPrompt },\n      { role: \"user\",   content: userMessage  }\n    ]\n  })\n};"
+      },
+      "id": "0d9f7e66-4040-4b25-907d-ed20fd69623e",
+      "name": "Reddit Build Gemini Crosscheck Body1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1056,
+        2512
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.chatanywhere.tech/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_CHATANYWHERE_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.chat_body }}",
+        "options": {}
+      },
+      "id": "cb5ed1e2-c1e4-4dd5-be57-cff82d4fcc67",
+      "name": "Reddit Gemini Pro Crosscheck1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -816,
+        2512
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "var builder = $('Reddit Build Gemini Crosscheck Body1').item.json;\ntry {\n  // Extracting the text from ChatAnywhere format\n  var content = $json.choices[0].message.content || \"\";\n  \n  if (!content) throw new Error(\"No content from API\");\n  content = content.replace(/^```(?:json)?\\s*/i,\"\").replace(/```\\s*$/i,\"\").trim();\n  \n  var start = content.indexOf(\"{\"); \n  var end = content.lastIndexOf(\"}\");\n  if (start===-1 || end===-1) throw new Error(\"No JSON\");\n  \n  var parsed = JSON.parse(content.substring(start,end+1));\n  \n  // ChatAnywhere score\n  var confirmedScore = typeof parsed.confirmed_score===\"number\" ? Math.min(1,Math.max(0,parsed.confirmed_score)) : 0;\n  \n  // Final score is average of Groq and ChatAnywhere\n  var finalScore  = Math.round(((builder.groq_score + confirmedScore) / 2) * 100) / 100;\n  \n  return {\n    POST_ID: builder.POST_ID, title: builder.title, text: builder.text, url: builder.url,\n    subreddit: builder.subreddit, score: builder.score, author: builder.author,\n    created_utc: builder.created_utc, num_comments: builder.num_comments,\n    platform: \"reddit\", fetch_type: builder.fetch_type,\n    groq_score: builder.groq_score, gemini_score: confirmedScore, final_score: finalScore,\n    intent: builder.intent, urgency: builder.urgency, poster_role: builder.poster_role,\n    pain_points: builder.pain_points, team_size_hint: builder.team_size_hint,\n    tools_mentioned: builder.tools_mentioned, is_decision_maker: builder.is_decision_maker,\n    outreach_angle: builder.outreach_angle,\n    reply_draft: parsed.reply_draft || \"\",\n    confirmation_reason: parsed.confirmation_reason || \"\",\n    disqualified: confirmedScore < 0.8\n  };\n} catch(e) {\n  return {\n    POST_ID: builder.POST_ID, title: builder.title, text: builder.text, url: builder.url,\n    subreddit: builder.subreddit, score: builder.score, author: builder.author,\n    created_utc: builder.created_utc, num_comments: builder.num_comments,\n    platform: \"reddit\", fetch_type: builder.fetch_type,\n    groq_score: builder.groq_score, gemini_score: 0, final_score: 0,\n    intent: builder.intent, urgency: builder.urgency, poster_role: builder.poster_role,\n    pain_points: builder.pain_points, team_size_hint: builder.team_size_hint,\n    tools_mentioned: builder.tools_mentioned, is_decision_maker: builder.is_decision_maker,\n    outreach_angle: builder.outreach_angle, reply_draft: \"\", confirmation_reason: \"parse_error\",\n    disqualified: true\n  };\n}"
+      },
+      "id": "b94c1553-709b-4c18-ad12-bbc29e3a8381",
+      "name": "Reddit Parse Gemini Final Score1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -576,
+        2512
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1-MVY_KhE7Ac0YSmoKhv24KE1x-lGZ6HBr8mbLlHPxrw",
+          "mode": "list",
+          "cachedResultName": "TroopMessenger Leads Database"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Reddit_Leads"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "POST_ID",
+              "lookupValue": "={{ $json.POST_ID }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b4687621-2fa4-4798-af46-a710a57f3328",
+      "name": "Reddit Check Duplicate in Sheet1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -64,
+        2496
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "dd-r",
+              "leftValue": "={{ $json.POST_ID }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "95ee6b2e-e050-4b8a-8fa7-830ea6d3c1ca",
+      "name": "Reddit New Post Only1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        176,
+        2496
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1-MVY_KhE7Ac0YSmoKhv24KE1x-lGZ6HBr8mbLlHPxrw",
+          "mode": "list",
+          "cachedResultName": "TroopMessenger Leads Database"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Reddit_Leads"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "POST_ID": "={{ $('Reddit Build Gemini Crosscheck Body1').item.json.POST_ID }}",
+            "Title": "={{ $('Reddit Build Gemini Crosscheck Body1').item.json.title }}",
+            "Text": "={{ $('Reddit Build Gemini Crosscheck Body1').item.json.text }}",
+            "URL": "={{ $('Reddit Build Gemini Crosscheck Body1').item.json.url }}",
+            "Subreddit": "={{ $('Reddit Build Gemini Crosscheck Body1').item.json.subreddit }}",
+            "Reddit_Score": "={{ $('Reddit Build Gemini Crosscheck Body1').item.json.score }}",
+            "Author": "={{ $('Reddit Build Gemini Crosscheck Body1').item.json.author }}",
+            "Intent": "={{ $('Reddit Parse Gemini Final Score1').item.json.intent }}",
+            "Urgency": "={{ $('Reddit Parse Gemini Final Score1').item.json.urgency }}",
+            "Poster_Role": "={{ $('Reddit Parse Gemini Final Score1').item.json.poster_role }}",
+            "Pain_Points": "={{ $('Reddit Parse Gemini Final Score1').item.json.pain_points }}",
+            "Tools_Mentioned": "={{ $('Reddit Parse Gemini Final Score1').item.json.tools_mentioned }}",
+            "Is_Decision_Maker": "={{ $('Reddit Parse Gemini Final Score1').item.json.is_decision_maker }}",
+            "Outreach_Angle": "={{ $('Reddit Parse Gemini Final Score1').item.json.outreach_angle }}",
+            "Reply_Draft": "={{ $('Reddit Parse Gemini Final Score1').item.json.reply_draft }}",
+            "AI_Score": "={{ $('Reddit Parse Gemini Final Score1').item.json.final_score }}\n"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "POST_ID",
+              "displayName": "POST_ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Title",
+              "displayName": "Title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Text",
+              "displayName": "Text",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "URL",
+              "displayName": "URL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Subreddit",
+              "displayName": "Subreddit",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Reddit_Score",
+              "displayName": "Reddit_Score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Author",
+              "displayName": "Author",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "AI_Score",
+              "displayName": "AI_Score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Intent",
+              "displayName": "Intent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Urgency",
+              "displayName": "Urgency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Poster_Role",
+              "displayName": "Poster_Role",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Pain_Points",
+              "displayName": "Pain_Points",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Tools_Mentioned",
+              "displayName": "Tools_Mentioned",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Is_Decision_Maker",
+              "displayName": "Is_Decision_Maker",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Outreach_Angle",
+              "displayName": "Outreach_Angle",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Reply_Draft",
+              "displayName": "Reply_Draft",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "9bd288a6-7432-4277-8022-cf0dcd7383b5",
+      "name": "Reddit Save to Reddit Leads Sheet1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        400,
+        2480
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "prathameshmohiteattendance.ai@gmail.com",
+        "subject": "={{ \"CONFIRMED Lead [r/\" + $('Reddit Build Gemini Crosscheck Body1').item.json.subreddit + \"] Groq:\" + $('Reddit Parse Gemini Final Score1').item.json.groq_score + \" Gemini:\" + $('Reddit Parse Gemini Final Score1').item.json.gemini_score + \" Final:\" + $('Reddit Parse Gemini Final Score1').item.json.final_score }}",
+        "message": "={{ \"<h2>Double-Confirmed Lead</h2><table border='1' cellpadding='8' style='border-collapse:collapse;font-family:Arial;'><tr><td><b>Subreddit</b></td><td>r/\" + $('Reddit Build Gemini Crosscheck Body1').item.json.subreddit + \"</td></tr><tr><td><b>Title</b></td><td>\" + $('Reddit Build Gemini Crosscheck Body1').item.json.title + \"</td></tr><tr><td><b>URL</b></td><td><a href='\" + $('Reddit Build Gemini Crosscheck Body1').item.json.url + \"'>Open Post</a></td></tr><tr><td><b>Groq Score</b></td><td>\" + $('Reddit Parse Gemini Final Score1').item.json.groq_score + \"</td></tr><tr><td><b>Gemini Score</b></td><td>\" + $('Reddit Parse Gemini Final Score1').item.json.gemini_score + \"</td></tr><tr><td><b>Final Score</b></td><td><b>\" + $('Reddit Parse Gemini Final Score1').item.json.final_score + \"</b></td></tr><tr><td><b>Intent</b></td><td>\" + $('Reddit Parse Gemini Final Score1').item.json.intent + \"</td></tr><tr><td><b>Reply Draft</b></td><td><i>\" + $('Reddit Parse Gemini Final Score1').item.json.reply_draft + \"</i></td></tr></table>\" }}",
+        "options": {}
+      },
+      "id": "7797a19e-f254-44f1-838c-13a7cd1647e1",
+      "name": "Reddit Gmail Alert New Reddit Lead1",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        656,
+        2480
+      ],
+      "webhookId": "reddit-lead-gmail-webhook",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "var serperApiKey = \"YOUR_SERPER_API_KEY\";\nvar TARGET_QUESTIONS = 300;\n\nfunction shuffle(arr) {\n  var a = arr.slice();\n  for (var i = a.length - 1; i > 0; i--) {\n    var j = Math.floor(Math.random() * (i + 1));\n    var tmp = a[i]; a[i] = a[j]; a[j] = tmp;\n  }\n  return a;\n}\n\nvar queries = shuffle([\n  // 1. Direct Competitor Alternatives\n  \"site:quora.com Slack alternative\",\n  \"site:quora.com Microsoft Teams alternative\",\n  \"site:quora.com free Slack alternatives for startups\",\n  \"site:quora.com stop using WhatsApp for business\",\n  \"site:quora.com Slack vs Teams vs\",\n  // 2. Pain Points & Pricing\n  \"site:quora.com Slack pricing too high\",\n  \"site:quora.com tired of Slack notifications\",\n  \"site:quora.com communication silos remote work\",\n  \"site:quora.com remote team communication issues\",\n  \"site:quora.com email is dead for internal communication\",\n  // 3. Feature Specific (Security & Hosting)\n  \"site:quora.com secure messaging app for business\",\n  \"site:quora.com self hosted team chat alternative\",\n  \"site:quora.com enterprise team messaging software\",\n  \"site:quora.com secure file sharing and chat for teams\",\n  // 4. Broad Team & Startup Management\n  \"site:quora.com best tools for internal communication\",\n  \"site:quora.com best team chat app for startup\",\n  \"site:quora.com how to manage remote team communication\",\n  \"site:quora.com async communication tools for remote teams\",\n  // 5. Self-hosted / On-premise\n  \"site:quora.com self hosted team chat\",\n  \"site:quora.com on premise team chat\",\n  \"site:quora.com self hosted messaging app\",\n  \"site:quora.com on premise chat server\",\n  \"site:quora.com self hosted instant messaging\",\n  \"site:quora.com private team chat server\",\n  \"site:quora.com on prem collaboration software\",\n  \"site:quora.com self hosted communication tool\",\n  // 6. Competitor-alternative\n  \"site:quora.com self hosted slack alternative\",\n  \"site:quora.com slack alternative self hosted\",\n  \"site:quora.com self hosted teams alternative\",\n  \"site:quora.com microsoft teams alternative self hosted\",\n  \"site:quora.com mattermost alternative\",\n  \"site:quora.com rocketchat alternative\",\n  \"site:quora.com on premise slack alternative\",\n  // 7. Security / Sovereignty / Compliance\n  \"site:quora.com data sovereignty messaging\",\n  \"site:quora.com data residency messaging\",\n  \"site:quora.com secure enterprise messaging\",\n  \"site:quora.com encrypted team messaging\",\n  \"site:quora.com end to end encrypted team chat\",\n  \"site:quora.com HIPAA compliant messaging\",\n  \"site:quora.com GDPR compliant chat\",\n  \"site:quora.com compliant messaging platform\",\n  // 8. Air-gap / High-security\n  \"site:quora.com air gapped messaging\",\n  \"site:quora.com air gapped chat\",\n  \"site:quora.com intranet messaging\",\n  \"site:quora.com offline messaging server\",\n  \"site:quora.com private network chat\",\n  // 9. Technical / Deployment\n  \"site:quora.com self hosted chat docker\",\n  \"site:quora.com LDAP chat application\",\n  \"site:quora.com active directory messaging\",\n  \"site:quora.com enterprise chat server on premise\",\n  // 10. Feature-specific\n  \"site:quora.com white label chat app\",\n  \"site:quora.com white label messaging platform\"\n]);\n\nvar allQuestions = [];\nvar seenIds = {};\n\nfunction cleanTitle(raw) { return (raw||\"\").replace(/ ?-? ?Quora$/i,\"\").replace(/ ?\\| ?Quora$/i,\"\").trim(); }\nfunction extractAnswerCount(snippet) { var m=(snippet||\"\").match(/(\\d+)\\s+answer/i); return m?parseInt(m[1],10):0; }\nvar TIER = { week:3, recent:2, top:1 };\n\nfunction processResults(results, fetchType) {\n  for (var j=0;j<results.length;j++) {\n    if (allQuestions.length>=TARGET_QUESTIONS) break;\n    var r=results[j], link=r.link||\"\";\n    if (link.indexOf(\"quora.com\")===-1||link.indexOf(\"/profile/\")!==-1||link.indexOf(\"/topic/\")!==-1||link.indexOf(\"/search?\")!==-1||link.indexOf(\"/q/\")!==-1||link.indexOf(\"/news/\")!==-1) continue;\n    var parts=link.split(\"/\"), id=\"quora_\"+parts[parts.length-1].substring(0,50);\n    if (seenIds[id]) { var ex=allQuestions.find(function(q){return q.json.POST_ID===id;}); if(ex&&TIER[fetchType]>TIER[ex.json.fetch_type])ex.json.fetch_type=fetchType; continue; }\n    seenIds[id]=true;\n    allQuestions.push({ json: { POST_ID:id, title:cleanTitle(r.title), text:r.snippet||cleanTitle(r.title), url:link, subreddit:\"Quora\", platform:\"quora\", author:\"unknown\", score:extractAnswerCount(r.snippet), num_comments:extractAnswerCount(r.snippet), created_utc:Date.now(), fetch_type:fetchType, date_hint:r.date||\"\" }});\n  }\n}\n\nfor (var i=0;i<queries.length;i++) {\n  if (allQuestions.length>=TARGET_QUESTIONS) break;\n  try { var wR=await this.helpers.httpRequest({method:\"POST\",url:\"https://google.serper.dev/search\",headers:{\"X-API-KEY\":serperApiKey,\"Content-Type\":\"application/json\"},body:JSON.stringify({q:queries[i],num:10,tbs:\"qdr:w\"}),returnFullResponse:false}); processResults(wR.organic||[],\"week\"); } catch(e){}\n  await new Promise(function(r){setTimeout(r,800)});\n  if (allQuestions.length>=TARGET_QUESTIONS) break;\n  try { var rR=await this.helpers.httpRequest({method:\"POST\",url:\"https://google.serper.dev/search\",headers:{\"X-API-KEY\":serperApiKey,\"Content-Type\":\"application/json\"},body:JSON.stringify({q:queries[i],num:10,tbs:\"qdr:m3\"}),returnFullResponse:false}); processResults(rR.organic||[],\"recent\"); } catch(e){}\n  await new Promise(function(r){setTimeout(r,800)});\n  if (allQuestions.length>=TARGET_QUESTIONS) break;\n  try { var tR=await this.helpers.httpRequest({method:\"POST\",url:\"https://google.serper.dev/search\",headers:{\"X-API-KEY\":serperApiKey,\"Content-Type\":\"application/json\"},body:JSON.stringify({q:queries[i]+\" answers\",num:10}),returnFullResponse:false}); processResults(tR.organic||[],\"top\"); } catch(e){}\n  await new Promise(function(r){setTimeout(r,800)});\n}\n\nif (allQuestions.length===0) return [{json:{_skip:true}}];\nallQuestions.sort(function(a,b){var at=TIER[a.json.fetch_type]||0,bt=TIER[b.json.fetch_type]||0;return at!==bt?bt-at:b.json.num_comments-a.json.num_comments;});\nreturn allQuestions;"
+      },
+      "id": "0494dad8-5bca-4be0-8277-451b22d88763",
+      "name": "Fetch Quora Questions1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3456,
+        2864
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1-MVY_KhE7Ac0YSmoKhv24KE1x-lGZ6HBr8mbLlHPxrw",
+          "mode": "list",
+          "cachedResultName": "TroopMessenger Leads Database"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1525642053,
+          "mode": "list",
+          "cachedResultName": "Quora_Leads",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-MVY_KhE7Ac0YSmoKhv24KE1x-lGZ6HBr8mbLlHPxrw/edit#gid=1525642053"
+        },
+        "options": {}
+      },
+      "id": "d530da2f-8eaf-43f2-957d-d84753684a78",
+      "name": "Quora Get All Known POST IDs1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -3248,
+        2864
+      ],
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Get the Google Sheet rows from the immediate previous node\nconst sheetRows = $input.all();\n\n// 2. Explicitly pull the raw Quora questions from the source node\nconst fetchedPosts = $('Fetch Quora Questions1').all();\n\n// 3. Safety check: Did the fetcher node actually bring anything back?\nif (!fetchedPosts || fetchedPosts.length === 0 || (fetchedPosts[0].json && fetchedPosts[0].json._skip)) {\n  return [{ json: { _skip: true, message: \"No raw questions found from Quora input\" } }];\n}\n\n// 4. Build a Set of known POST_IDs from the Google Sheet rows\nconst knownIds = new Set();\nsheetRows.forEach(row => {\n  const id = String(row.json.POST_ID || \"\").trim();\n  if (id) knownIds.add(id);\n});\n\n// 5. Filter fetched questions: keep only those NOT already in your sheet\nconst newPosts = fetchedPosts.filter(p => {\n  const id = String(p.json.POST_ID || \"\").trim();\n  return id && !knownIds.has(id);\n});\n\n// 6. Stop if no new posts remain\nif (newPosts.length === 0) {\n  return [{ json: { _skip: true, message: \"All fetched Quora posts already exist in Google Sheets\" } }];\n}\n\nreturn newPosts;"
+      },
+      "id": "1480e11e-31ae-4ca4-95a9-cc457286abb1",
+      "name": "Quora Pre-filter New Posts Only1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3024,
+        2864
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "38f94e33-6900-4384-b7eb-6eefab012fa8",
+      "name": "Quora Loop Over Posts1",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -2768,
+        2864
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "if ($json._skip === true || !$json.POST_ID) {\n  return { _skip: true };\n}\n\nvar postId      = String($json.POST_ID      || \"\");\nvar title       = String($json.title        || \"\");\nvar text        = String($json.text         || \"\");\nvar url         = String($json.url          || \"\");\nvar author      = String($json.author       || \"\");\nvar score       = Number($json.score        || 0);\nvar createdUtc  = Number($json.created_utc  || 0);\nvar numComments = Number($json.num_comments || 0);\nvar fetchType   = String($json.fetch_type   || \"\");\n\nvar words     = (text || title || \"No content\").split(\" \");\nvar truncated = words.slice(0, 120).join(\" \") + (words.length > 120 ? \"...\" : \"\");\n\nvar systemPrompt = \"You are a lead scoring AI for Troop Messenger - a secure, self-hosted B2B team communication platform.\\n\\n\"\n  + \"Troop Messenger core strengths: self-hosted/on-premise deployment, data sovereignty, air-gapped network support, \"\n  + \"end-to-end encryption, LDAP/Active Directory integration, white-label options, HIPAA/GDPR compliance, Docker deployment.\\n\\n\"\n  + \"NOTE: You are analyzing a Quora question. Quora questions are often asked by professionals, IT managers, \"\n  + \"founders, and decision-makers actively researching solutions - treat them as higher intent than casual forum posts.\\n\\n\"\n  + \"SCORE 1.0 - Perfect lead (pitch immediately):\\n\"\n  + \"- Explicitly asking for self-hosted, on-premise, or air-gapped team chat\\n\"\n  + \"- Looking for Slack/Teams/Mattermost/Rocket.Chat alternative with data control\\n\"\n  + \"- Concerned about data sovereignty, data residency, or GDPR/HIPAA compliance for messaging\\n\"\n  + \"- Sysadmin/IT manager evaluating secure enterprise messaging or LDAP-integrated chat\\n\"\n  + \"- Company banned WhatsApp/Slack due to security/compliance policy\\n\"\n  + \"- Actively shopping for white-label or private-network chat solution\\n\"\n  + \"- Advocating self-hosted software to reduce SaaS costs\\n\"\n  + \"- Discussing open source or self-hosted alternatives to paid tools\\n\\n\"\n  + \"SCORE 0.8 - Strong lead:\\n\"\n  + \"- Slack/Teams too expensive, evaluating alternatives (even without self-host requirement)\\n\"\n  + \"- Privacy concerns about SaaS messaging tools (data going to third-party servers)\\n\"\n  + \"- Remote/distributed team struggling with communication and considering a switch\\n\"\n  + \"- CTO/IT head/founder evaluating team communication stack\\n\"\n  + \"- Unhappy with Mattermost or Rocket.Chat (direct competitor switchers)\\n\"\n  + \"- Asking about Docker-deployable or LDAP-compatible chat tools\\n\"\n  + \"- General frustration with SaaS costs or vendor lock-in for business tools\\n\"\n  + \"- Asking broadly about best team chat or collaboration tools for a team\\n\"\n  + \"- Discussing reducing monthly software spend across the business\\n\\n\"\n  + \"SCORE 0.6 - Possible lead:\\n\"\n  + \"- General team communication pain (no specific tool mentioned)\\n\"\n  + \"- WhatsApp used for business causing problems but no clear switch intent\\n\"\n  + \"- Startup/SMB founder frustrated with current communication setup\\n\"\n  + \"- Mentions security or privacy concerns loosely without active evaluation\\n\"\n  + \"- General interest in open source or self-hosted software\\n\"\n  + \"- Broad educational question about team communication tools\\n\\n\"\n  + \"SCORE 0.0 - Not a lead:\\n\"\n  + \"- Completely unrelated to business software, team tools, or communication\\n\"\n  + \"- Personal life, relationships, health, entertainment topics\\n\"\n  + \"- Pure coding/hiring/finance/legal/GST with zero software evaluation angle\\n\"\n  + \"- Happy with current tool and not evaluating anything new\\n\\n\"\n  + \"CRITICAL RULES:\\n\"\n  + \"- A question about reducing SaaS costs or moving to self-hosted software IS a lead.\\n\"\n  + \"- A question about open source alternatives to paid software IS a lead.\\n\"\n  + \"- A broad question like 'what is the best team chat for remote teams' IS a lead at 0.8.\\n\"\n  + \"- Do NOT require the question to explicitly mention messaging or chat to score above 0.0.\\n\"\n  + \"- Quora audiences ask broader questions than Reddit - do not penalise for generic phrasing.\\n\"\n  + \"- When in doubt between 0.0 and 0.6, choose 0.6 - it is better to keep a possible lead than lose it.\\n\"\n  + \"- Only score 0.0 if there is truly zero connection to business software or team tools.\\n\\n\"\n  + \"INTENT LABELS (pick one):\\n\"\n  + \"self_hosted_search | competitor_switch | compliance_need | privacy_concern | \"\n  + \"air_gap_need | cost_reduction | feature_gap | general_comms_pain | no_intent\\n\\n\"\n  + \"URGENCY:\\n\"\n  + \"high = actively evaluating or switching NOW\\n\"\n  + \"medium = researching or planning to switch\\n\"\n  + \"low = venting or casually curious\\n\\n\"\n  + \"Return ONLY valid JSON, no markdown, no extra text:\\n\"\n  + \"{\\\"score\\\": 0.0, \\\"intent\\\": \\\"no_intent\\\", \\\"urgency\\\": \\\"low\\\", \\\"poster_role\\\": \\\"unknown\\\", \\\"pain_points\\\": [], \\\"team_size_hint\\\": \\\"unknown\\\", \\\"tools_mentioned\\\": [], \\\"is_decision_maker\\\": false, \\\"deployment_preference\\\": \\\"unknown\\\", \\\"compliance_needs\\\": [], \\\"outreach_angle\\\": \\\"\\\", \\\"disqualified\\\": true}\";\n\nvar userMessage = \"Analyze this Quora question and score it as a potential Troop Messenger lead.\\n\\n\"\n  + \"Title: \" + title + \"\\n\"\n  + \"Content: \" + truncated + \"\\n\\n\"\n  + \"Pay special attention if the question mentions: self-hosting, on-premise, air-gap, data sovereignty, \"\n  + \"LDAP, Docker, HIPAA, GDPR, Mattermost, Rocket.Chat, dissatisfaction with Slack/Teams pricing or privacy, \"\n  + \"SaaS costs, vendor lock-in, open source alternatives, or reducing monthly software spend. \"\n  + \"Remember: when in doubt between keeping and disqualifying, keep the lead.\";\n\nreturn {\n  POST_ID:      postId,\n  title:        title,\n  text:         text,\n  url:          url,\n  subreddit:    \"Quora\",\n  score:        score,\n  author:       author,\n  created_utc:  createdUtc,\n  num_comments: numComments,\n  platform:     \"quora\",\n  fetch_type:   fetchType,\n  selected_groq_key: \"Bearer YOUR_GROQ_API_KEY_2\",\n  groq_body: JSON.stringify({\n    model: \"llama-3.1-8b-instant\",\n    temperature: 0.1,\n    messages: [\n      { role: \"system\", content: systemPrompt },\n      { role: \"user\",   content: userMessage  }\n    ]\n  })\n};"
+      },
+      "id": "4e63cb86-7aae-4515-be87-69a7b194a1fe",
+      "name": "Quora Build Groq Body1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2256,
+        2880
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.selected_groq_key }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.groq_body }}",
+        "options": {}
+      },
+      "id": "9344ae77-cc31-4698-b065-6c88a847b40a",
+      "name": "Quora Groq AI Scoring Key ",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1792,
+        2864
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "var builder = $('Quora Build Groq Body1').item.json;\ntry {\n  var content = $json.choices[0].message.content || \"\";\n  if (!content) throw new Error(\"No content\");\n  content = content.replace(/^```(?:json)?\\s*/i,\"\").replace(/```\\s*$/i,\"\").trim();\n  var start=content.indexOf(\"{\"); var end=content.lastIndexOf(\"}\");\n  if(start===-1||end===-1) throw new Error(\"No JSON\");\n  var parsed = JSON.parse(content.substring(start,end+1));\n  return {\n    POST_ID: builder.POST_ID, title: builder.title, text: builder.text, url: builder.url,\n    author: builder.author, platform: \"quora\", fetch_type: builder.fetch_type,\n    groq_score:        typeof parsed.score===\"number\" ? Math.min(1,Math.max(0,parsed.score)) : 0,\n    intent:            parsed.intent         || \"unknown\",\n    urgency:           parsed.urgency        || \"low\",\n    poster_role:       parsed.poster_role    || \"unknown\",\n    pain_points:       Array.isArray(parsed.pain_points)     ? parsed.pain_points.join(\", \")     : \"\",\n    team_size_hint:    parsed.team_size_hint || \"unknown\",\n    tools_mentioned:   Array.isArray(parsed.tools_mentioned) ? parsed.tools_mentioned.join(\", \") : \"\",\n    is_decision_maker: parsed.is_decision_maker || false,\n    outreach_angle:    parsed.outreach_angle || \"\",\n    disqualified:      parsed.disqualified   || false\n  };\n} catch(e) {\n  return {\n    POST_ID: builder.POST_ID, title: builder.title, text: builder.text, url: builder.url,\n    author: builder.author, platform: \"quora\", fetch_type: builder.fetch_type,\n    groq_score: 0, intent: \"parse_error\", urgency: \"low\", poster_role: \"unknown\",\n    pain_points: \"\", team_size_hint: \"unknown\", tools_mentioned: \"\",\n    is_decision_maker: false, outreach_angle: \"\", disqualified: true\n  };\n}"
+      },
+      "id": "c2b01bfc-5f72-48ae-90d3-6d8724f6a723",
+      "name": "Quora Parse Groq Score1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1552,
+        2864
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "if ($json._skip === true || !$json.POST_ID) {\n  return { _skip: true };\n}\n\nvar d = $json;\n\nvar words     = (d.text || d.title || \"No content\").split(\" \");\nvar truncated = words.slice(0, 120).join(\" \") + (words.length > 120 ? \"...\" : \"\");\n\nvar systemPrompt = \"You are a lead validation AI for Troop Messenger - a secure, self-hosted B2B team communication platform.\\n\\n\"\n  + \"Troop Messenger core strengths: self-hosted/on-premise deployment, data sovereignty, air-gapped network support, \"\n  + \"end-to-end encryption, LDAP/Active Directory integration, white-label options, HIPAA/GDPR compliance, Docker deployment.\\n\\n\"\n  + \"A first AI scored this Quora question as a potential lead. Your job:\\n\"\n  + \"1. Verify the score - confirm, raise, lower, or disqualify.\\n\"\n  + \"2. Write an answer draft ONLY if confirmed score >= 0.6.\\n\\n\"\n  + \"SCORE GUIDE:\\n\"\n  + \"1.0 - Perfect. Explicitly asking which self-hosted/on-premise/air-gapped team chat to use, seeking Slack/Teams \"\n  + \"alternatives with data control, evaluating LDAP/Docker/white-label/compliance-ready messaging tools, \"\n  + \"or advocating self-hosted software to reduce SaaS costs.\\n\"\n  + \"0.8 - Strong. Asking about team communication tools in general, frustrated with SaaS pricing or privacy, \"\n  + \"remote/distributed team seeking a better collaboration setup, IT/CTO evaluating messaging options, \"\n  + \"discussing open source alternatives to paid tools, frustrated with vendor lock-in.\\n\"\n  + \"0.6 - Marginal. Vague question about team productivity or communication with no clear evaluation intent, \"\n  + \"general interest in self-hosted or open source software, broad educational question about team tools.\\n\"\n  + \"0.0 - Disqualify. Completely unrelated to business software, team tools, or communication. \"\n  + \"Personal life, relationships, health, entertainment, or pure coding/HR/finance/legal with zero software evaluation angle.\\n\\n\"\n  + \"CRITICAL SCORING RULES:\\n\"\n  + \"- A question about reducing SaaS costs or moving to self-hosted software IS a lead.\\n\"\n  + \"- A question about open source alternatives to paid software IS a lead.\\n\"\n  + \"- A broad question like 'what is the best team chat for remote teams' IS a lead at 0.8.\\n\"\n  + \"- Do NOT require the question to explicitly mention messaging or chat to keep it as a lead.\\n\"\n  + \"- Do NOT disqualify just because the question is general or educational.\\n\"\n  + \"- Quora audiences ask broader questions than Reddit - do not penalise for generic phrasing.\\n\"\n  + \"- Do not confirm just because the first AI did - re-read the question independently.\\n\"\n  + \"- When in doubt between 0.0 and 0.6, choose 0.6 - it is better to keep a possible lead than lose it.\\n\"\n  + \"- Only disqualify if there is truly zero connection to business software evaluation or team tools.\\n\\n\"\n  + \"ANSWER DRAFT RULES (only write if confirmed_score >= 0.6):\\n\"\n  + \"- 5 to 7 sentences. Write as an experienced professional answering on Quora, not a marketer.\\n\"\n  + \"- Open with the core answer - address their actual question directly before any product mention.\\n\"\n  + \"- Mention Troop Messenger once by name, tied to a specific feature relevant to their pain point:\\n\"\n  + \"  - Self-hosting or data control concerns: highlight on-premise deployment and data sovereignty.\\n\"\n  + \"  - Slack/Teams cost complaints: highlight comparable features without per-user SaaS pricing.\\n\"\n  + \"  - Security or compliance: highlight end-to-end encryption, HIPAA/GDPR, air-gapped support.\\n\"\n  + \"  - Remote or distributed team: highlight persistent messaging, file sharing, LDAP integration.\\n\"\n  + \"  - Open source or self-hosted interest: highlight full data control with enterprise support.\\n\"\n  + \"  - SaaS cost reduction: highlight self-hosted deployment that eliminates per-seat SaaS fees.\\n\"\n  + \"- End with a practical suggestion (try it, explore the docs, compare with their current tool).\\n\"\n  + \"- Do NOT use salesy phrases like game-changer, best-in-class, or revolutionize.\\n\"\n  + \"- If confirmed_score < 0.6, set reply_draft to empty string.\\n\\n\"\n  + \"Return ONLY valid JSON, no markdown, no extra text:\\n\"\n  + \"{\\\"confirmed_score\\\": 0.0, \\\"reply_draft\\\": \\\"\\\", \\\"confirmation_reason\\\": \\\"\\\"}\";\n\nvar userMessage = \"Validate this Quora question. The first-stage AI scored it \" + d.groq_score + \".\\n\\n\"\n  + \"Title: \" + d.title + \"\\n\"\n  + \"Text: \" + truncated + \"\\n\\n\"\n  + \"First-stage context:\\n\"\n  + \"- Intent: \" + d.intent + \"\\n\"\n  + \"- Urgency: \" + d.urgency + \"\\n\"\n  + \"- Poster role: \" + d.poster_role + \"\\n\"\n  + \"- Pain points: \" + (Array.isArray(d.pain_points) ? d.pain_points.join(\", \") : d.pain_points) + \"\\n\"\n  + \"- Tools mentioned: \" + (Array.isArray(d.tools_mentioned) ? d.tools_mentioned.join(\", \") : d.tools_mentioned) + \"\\n\"\n  + \"- Deployment preference: \" + (d.deployment_preference || \"unknown\") + \"\\n\\n\"\n  + \"Re-read the question independently. Confirm or correct the score. \"\n  + \"If confirmed >= 0.6, write a Quora-style answer that addresses their question directly \"\n  + \"and mentions Troop Messenger in context of their specific pain point. \"\n  + \"Remember: when in doubt between keeping and disqualifying, keep the lead.\";\n\nreturn {\n  POST_ID:      d.POST_ID,\n  title:        d.title,\n  text:         d.text,\n  url:          d.url,\n  author:       d.author,\n  platform:     \"quora\",\n  fetch_type:   d.fetch_type,\n  groq_score:        d.groq_score,\n  intent:            d.intent,\n  urgency:           d.urgency,\n  poster_role:       d.poster_role,\n  pain_points:       d.pain_points,\n  team_size_hint:    d.team_size_hint,\n  tools_mentioned:   d.tools_mentioned,\n  is_decision_maker: d.is_decision_maker,\n  outreach_angle:    d.outreach_angle,\n  chat_body: JSON.stringify({\n    model:       \"gpt-3.5-turbo\",\n    temperature: 0.2,\n    messages: [\n      { role: \"system\", content: systemPrompt },\n      { role: \"user\",   content: userMessage  }\n    ]\n  })\n};"
+      },
+      "id": "01cf5f16-94ae-4790-9e9e-1c9f8c3cc433",
+      "name": "Quora Build Gemini Crosscheck Body1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1056,
+        2848
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=YOUR_GEMINI_API_KEY",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.gemini_body }}",
+        "options": {}
+      },
+      "id": "695295e8-948f-45c5-b91a-874e9f399472",
+      "name": "Quora Gemini Pro Crosscheck1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -816,
+        2848
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "var builder = $('Quora Build Gemini Crosscheck Body1').item.json;\ntry {\n  // Parsing structural content out of ChatAnywhere object formats\n  var content = $json.choices[0].message.content || \"\";\n  if (!content) throw new Error(\"No content from ChatAnywhere API\");\n  \n  content = content.replace(/^```(?:json)?\\s*/i,\"\").replace(/```\\s*$/i,\"\").trim();\n  var start = content.indexOf(\"{\"); \n  var end = content.lastIndexOf(\"}\");\n  if (start===-1||end===-1) throw new Error(\"No JSON structure detected\");\n  \n  var parsed = JSON.parse(content.substring(start, end + 1));\n  var chatAnywhereScore = typeof parsed.confirmed_score === \"number\" ? Math.min(1, Math.max(0, parsed.confirmed_score)) : 0;\n  var finalScore  = Math.round(((builder.groq_score + chatAnywhereScore) / 2) * 100) / 100;\n  \n  return {\n    POST_ID: builder.POST_ID, title: builder.title, text: builder.text, url: builder.url,\n    author: builder.author, platform: \"quora\", fetch_type: builder.fetch_type,\n    groq_score: builder.groq_score, gemini_score: chatAnywhereScore, final_score: finalScore,\n    intent: builder.intent, urgency: builder.urgency, poster_role: builder.poster_role,\n    pain_points: builder.pain_points, team_size_hint: builder.team_size_hint,\n    tools_mentioned: builder.tools_mentioned, is_decision_maker: builder.is_decision_maker,\n    outreach_angle: builder.outreach_angle,\n    reply_draft: parsed.reply_draft || \"\",\n    confirmation_reason: parsed.confirmation_reason || \"\",\n    disqualified: chatAnywhereScore < 0.8\n  };\n} catch(e) {\n  return {\n    POST_ID: builder.POST_ID, title: builder.title, text: builder.text, url: builder.url,\n    author: builder.author, platform: \"quora\", fetch_type: builder.fetch_type,\n    groq_score: builder.groq_score, gemini_score: 0, final_score: 0,\n    intent: builder.intent, urgency: builder.urgency, poster_role: builder.poster_role,\n    pain_points: builder.pain_points, team_size_hint: builder.team_size_hint,\n    tools_mentioned: builder.tools_mentioned, is_decision_maker: builder.is_decision_maker,\n    outreach_angle: builder.outreach_angle, reply_draft: \"\", confirmation_reason: \"parse_error\",\n    disqualified: true\n  };\n}"
+      },
+      "id": "0f950ffb-6c91-49c4-9844-7d1d605edacd",
+      "name": "Quora Parse Gemini Final Score1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -576,
+        2848
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1-MVY_KhE7Ac0YSmoKhv24KE1x-lGZ6HBr8mbLlHPxrw",
+          "mode": "list",
+          "cachedResultName": "TroopMessenger Leads Database"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1525642053,
+          "mode": "list",
+          "cachedResultName": "Quora_Leads"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "POST_ID",
+              "lookupValue": "={{ $json.POST_ID }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "209b5797-eb06-4212-922a-6468939ff897",
+      "name": "Quora Check Duplicate in Sheet1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -48,
+        2816
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "dd-q",
+              "leftValue": "={{ $json.POST_ID }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "bbbc63c2-a0ee-4664-afda-55d00c981150",
+      "name": "Quora New Post Only1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        192,
+        2816
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1-MVY_KhE7Ac0YSmoKhv24KE1x-lGZ6HBr8mbLlHPxrw",
+          "mode": "list",
+          "cachedResultName": "TroopMessenger Leads Database"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1525642053,
+          "mode": "list",
+          "cachedResultName": "Quora_Leads"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "POST_ID": "={{ $('Quora Build Gemini Crosscheck Body1').item.json.POST_ID }}",
+            "Title": "={{ $('Quora Build Gemini Crosscheck Body1').item.json.title }}",
+            "URL": "={{ $('Quora Build Gemini Crosscheck Body1').item.json.url }}",
+            "Author": "={{ $('Quora Build Gemini Crosscheck Body1').item.json.author }}",
+            "Intent": "={{ $('Quora Parse Gemini Final Score1').item.json.intent }}",
+            "Urgency": "={{ $('Quora Parse Gemini Final Score1').item.json.urgency }}",
+            "Poster_Role": "={{ $('Quora Parse Gemini Final Score1').item.json.poster_role }}",
+            "Is_Decision_Maker": "={{ $('Quora Parse Gemini Final Score1').item.json.is_decision_maker }}",
+            "Pain_Points": "={{ $('Quora Parse Gemini Final Score1').item.json.pain_points }}",
+            "Tools_Mentioned": "={{ $('Quora Parse Gemini Final Score1').item.json.tools_mentioned }}",
+            "Outreach_Angle": "={{ $('Quora Parse Gemini Final Score1').item.json.outreach_angle }}",
+            "Answer_Draft": "={{ $('Quora Parse Gemini Final Score1').item.json.reply_draft }}",
+            "Reply_Posted": "No",
+            "Converted": "No",
+            "AI_Score": "={{ $('Quora Parse Gemini Final Score1').item.json.final_score }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "POST_ID",
+              "displayName": "POST_ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Title",
+              "displayName": "Title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "URL",
+              "displayName": "URL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Author",
+              "displayName": "Author",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "AI_Score",
+              "displayName": "AI_Score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Intent",
+              "displayName": "Intent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Urgency",
+              "displayName": "Urgency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Poster_Role",
+              "displayName": "Poster_Role",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Is_Decision_Maker",
+              "displayName": "Is_Decision_Maker",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Pain_Points",
+              "displayName": "Pain_Points",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Tools_Mentioned",
+              "displayName": "Tools_Mentioned",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Outreach_Angle",
+              "displayName": "Outreach_Angle",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Answer_Draft",
+              "displayName": "Answer_Draft",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Reply_Posted",
+              "displayName": "Reply_Posted",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Reply_Date",
+              "displayName": "Reply_Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Converted",
+              "displayName": "Converted",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Notes",
+              "displayName": "Notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "fbfa9029-24df-4113-951b-8367f26c9aa5",
+      "name": "Quora Save to Quora Leads Sheet1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        400,
+        2800
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "prathameshmohiteattendance.ai@gmail.com",
+        "subject": "={{ \"CONFIRMED Quora Lead - Groq:\" + $('Quora Parse Gemini Final Score1').item.json.groq_score + \" Gemini:\" + $('Quora Parse Gemini Final Score1').item.json.gemini_score + \" Final:\" + $('Quora Parse Gemini Final Score1').item.json.final_score }}",
+        "message": "={{ \"<h2>Double-Confirmed Quora Lead</h2><table border='1' cellpadding='8' style='border-collapse:collapse;font-family:Arial;'><tr><td><b>Title</b></td><td>\" + $('Quora Build Gemini Crosscheck Body1').item.json.title + \"</td></tr><tr><td><b>URL</b></td><td><a href='\" + $('Quora Build Gemini Crosscheck Body1').item.json.url + \"'>Open Question</a></td></tr><tr><td><b>Groq Score</b></td><td>\" + $('Quora Parse Gemini Final Score1').item.json.groq_score + \"</td></tr><tr><td><b>Gemini Score</b></td><td>\" + $('Quora Parse Gemini Final Score1').item.json.gemini_score + \"</td></tr><tr><td><b>Final Score</b></td><td><b>\" + $('Quora Parse Gemini Final Score1').item.json.final_score + \"</b></td></tr><tr><td><b>Answer Draft</b></td><td><i>\" + $('Quora Parse Gemini Final Score1').item.json.reply_draft + \"</i></td></tr></table>\" }}",
+        "options": {}
+      },
+      "id": "4bcf6d70-35ee-4c4c-9d5b-68e6b9f9069a",
+      "name": "Quora Gmail Alert New Quora Lead1",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        656,
+        2800
+      ],
+      "webhookId": "quora-lead-gmail-webhook",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "var serperApiKey = \"YOUR_SERPER_API_KEY\";\nvar TARGET = 10;\nvar warmupQueries = [\n  \"site:quora.com best movies 2024\",\n  \"site:quora.com travel tips India\",\n  \"site:quora.com cricket IPL 2025\",\n  \"site:quora.com Bollywood recommendations\",\n  \"site:quora.com best books to read\",\n  \"site:quora.com productivity tips work from home\",\n  \"site:quora.com Indian startup ecosystem\",\n  \"site:quora.com healthy food habits\",\n  \"site:quora.com learning programming\",\n  \"site:quora.com best web series Netflix\",\n  \"site:quora.com tips for remote work\",\n  \"site:quora.com best Indian food recipes\",\n  \"site:quora.com how to improve communication skills\",\n  \"site:quora.com best places to visit India\"\n];\n\nvar allQuestions = [];\nvar seenIds = {};\n\nfunction cleanTitle(raw) {\n  return (raw || \"\").replace(/ ?-? ?Quora$/i, \"\").replace(/ ?\\| ?Quora$/i, \"\").trim();\n}\n\nfor (var i = 0; i < warmupQueries.length; i++) {\n  try {\n    var res = await this.helpers.httpRequest({\n      method: \"POST\",\n      url: \"https://google.serper.dev/search\",\n      headers: {\n        \"X-API-KEY\": serperApiKey,\n        \"Content-Type\": \"application/json\"\n      },\n      body: JSON.stringify({ q: warmupQueries[i], num: 10 }),\n      returnFullResponse: false\n    });\n    var organic = (res && res.organic) ? res.organic : [];\n    for (var j = 0; j < organic.length; j++) {\n      var link = organic[j].link || \"\";\n      if (\n        link.indexOf(\"quora.com\") === -1 ||\n        link.indexOf(\"/profile/\") !== -1 ||\n        link.indexOf(\"/topic/\")   !== -1 ||\n        link.indexOf(\"/search?\")  !== -1\n      ) continue;\n      var parts = link.split(\"/\");\n      var id = \"qwarm_\" + parts[parts.length - 1].substring(0, 40);\n      if (seenIds[id]) continue;\n      seenIds[id] = true;\n      allQuestions.push({\n        json: {\n          POST_ID:   id,\n          title:     cleanTitle(organic[j].title),\n          text:      organic[j].snippet || \"\",\n          url:       link,\n          topic:     warmupQueries[i],\n          author:    \"unknown\",\n          post_type: \"quora_warmup\"\n        }\n      });\n    }\n  } catch(e) {}\n  await new Promise(function(r) { setTimeout(r, 800); });\n}\n\nif (allQuestions.length === 0) return [{ json: { _skip: true, reason: \"Serper returned no Quora results\" } }];\nreturn allQuestions;"
+      },
+      "id": "4ec8fb4a-9bd1-44aa-bc17-a1ffca1242b4",
+      "name": "Fetch Random Quora Questions1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3472,
+        3184
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "f2127bb3-7290-4a11-b553-8b41b7b8a5de",
+      "name": "Loop Over Quora Warmup Questions1",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -3248,
+        3184
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "id": "c7b453e0-3730-4632-817c-3738909863f0",
+      "name": "Wait 3s Quora Warmup Rate Limit1",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -3008,
+        3200
+      ],
+      "webhookId": "quora-warmup-wait-webhook"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "var postId=String($json.POST_ID||\"\"),title=String($json.title||\"\"),text=String($json.text||\"\"),url=String($json.url||\"\"),topic=String($json.topic||\"\"),author=String($json.author||\"\");\nreturn {\n  POST_ID:postId, title:title, text:text, url:url, topic:topic, author:author,\n  selected_groq_key: \"Bearer YOUR_GROQ_API_KEY_3\",\n  groq_body:{\n    model:\"llama-3.3-70b-versatile\", temperature:0.8,\n    messages:[\n      {role:\"system\",content:\"You are a knowledgeable, helpful person answering a Quora question. Write a short, genuine answer (2-4 sentences). Sound natural and conversational. No product promotions. No links. Just a helpful, human answer that adds value.\"},\n      {role:\"user\",content:\"Write a brief helpful answer to this Quora question:\\n\\nTitle: \"+title+\"\\n\\nContext: \"+text.substring(0,300)}\n    ]\n  }\n};"
+      },
+      "id": "520f79fc-3ca0-4a9c-85ac-bb506073aee2",
+      "name": "Generate Casual Quora Warmup Answer1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2768,
+        3200
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.selected_groq_key }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.groq_body }}",
+        "options": {}
+      },
+      "id": "0e5bdb69-5326-4cf2-9a1f-70343a316191",
+      "name": "Groq API Quora Warmup Answer Key ",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2528,
+        3200
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "var source=$('Generate Casual Quora Warmup Answer1').item.json;\ntry{\n  var content=$json.choices[0].message.content||\"\";\n  content=content.replace(/^```(?:json)?\\s*/i,\"\").replace(/```\\s*$/i,\"\").trim();\n  return{POST_ID:source.POST_ID||\"\",title:source.title||\"\",url:source.url||\"\",topic:source.topic||\"\",author:source.author||\"\",warmup_answer:content};\n}catch(e){\n  return{POST_ID:source.POST_ID||\"\",title:source.title||\"\",url:source.url||\"\",topic:source.topic||\"\",author:source.author||\"\",warmup_answer:\"\"};\n}"
+      },
+      "id": "c4ec7c0b-6564-4d74-a893-63b8970274b3",
+      "name": "Parse Quora Warmup Answer Text1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2288,
+        3200
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1-MVY_KhE7Ac0YSmoKhv24KE1x-lGZ6HBr8mbLlHPxrw",
+          "mode": "list",
+          "cachedResultName": "TroopMessenger Leads Database"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 953352802,
+          "mode": "list",
+          "cachedResultName": "Quora_Warmup_Posts",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-MVY_KhE7Ac0YSmoKhv24KE1x-lGZ6HBr8mbLlHPxrw/edit#gid=953352802"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "POST_ID ",
+              "lookupValue": "={{ $('Generate Casual Quora Warmup Answer1').item.json.POST_ID }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4c61c3f1-17f4-4ee3-af7e-6a22fd9ae815",
+      "name": "Check If Quora Warmup Already Saved1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -2048,
+        3200
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "qw-dup-cond",
+              "leftValue": "={{ $json.POST_ID }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "48c757c2-061b-4bcb-9c04-fc0ad43acc46",
+      "name": "Quora Warmup Duplicate Check New Only1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1808,
+        3200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1-MVY_KhE7Ac0YSmoKhv24KE1x-lGZ6HBr8mbLlHPxrw",
+          "mode": "list",
+          "cachedResultName": "TroopMessenger Leads Database"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Quora_Warmup_Posts",
+          "mode": "list",
+          "cachedResultName": "Quora_Warmup_Posts"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "POST_ID ": "={{ $('Generate Casual Quora Warmup Answer1').item.json.POST_ID }}",
+            "Title": "={{ $('Generate Casual Quora Warmup Answer1').item.json.title }}",
+            "URL": "={{ $('Generate Casual Quora Warmup Answer1').item.json.url }}",
+            "Topic": "={{ $('Generate Casual Quora Warmup Answer1').item.json.topic }}",
+            "Author": "={{ $('Generate Casual Quora Warmup Answer1').item.json.author }}",
+            "Warmup_answer": "={{ $('Parse Quora Warmup Answer Text1').item.json.warmup_answer }}",
+            "Reply_Posted": "No"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "POST_ID ",
+              "displayName": "POST_ID ",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Title",
+              "displayName": "Title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "URL",
+              "displayName": "URL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Topic",
+              "displayName": "Topic",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Author",
+              "displayName": "Author",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Warmup_answer",
+              "displayName": "Warmup_answer",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Assigned_Account",
+              "displayName": "Assigned_Account",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Reply_Posted",
+              "displayName": "Reply_Posted",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Reply_Date",
+              "displayName": "Reply_Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Notes",
+              "displayName": "Notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "f30552d4-53a6-409c-92e3-4407187ca296",
+      "name": "Save to Quora Warmup Posts Sheet1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -1568,
+        3184
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "prathameshmohiteattendance.ai@gmail.com",
+        "subject": "={{ \"New Quora Warmup Answer Ready\" }}",
+        "message": "={{ \"<h2>Quora Warmup Post Ready</h2><table border='1' cellpadding='8' style='border-collapse:collapse;'><tr><td><b>Title</b></td><td>\" + $('Generate Casual Quora Warmup Answer1').item.json.title + \"</td></tr><tr><td><b>URL</b></td><td><a href='\" + $('Generate Casual Quora Warmup Answer1').item.json.url + \"'>Open Question</a></td></tr><tr><td><b>Answer</b></td><td><i>\" + $('Parse Quora Warmup Answer Text1').item.json.warmup_answer + \"</i></td></tr></table>\" }}",
+        "options": {}
+      },
+      "id": "03abc8e3-37d6-4a78-9f64-50564b7f45dd",
+      "name": "Gmail Alert New Quora Warmup Post1",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -1328,
+        3184
+      ],
+      "webhookId": "quora-warmup-gmail-webhook",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.selected_groq_key }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.groq_body }}",
+        "options": {}
+      },
+      "id": "f43f7e3a-dc14-4ebc-959a-f8f1ab32a2ec",
+      "name": "Reddit Groq AI Scoring Key",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1792,
+        2544
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "efa06f92-b42a-403a-905c-fcbc60b58657",
+      "name": "Reddit Wait 5s Rate Limit1",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -2496,
+        2560
+      ],
+      "webhookId": "reddit-wait-webhook-1"
+    },
+    {
+      "parameters": {},
+      "id": "2ded77b1-1a43-4aec-9629-d8463aa79c0f",
+      "name": "Quora Wait 5s Rate Limit1",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -2512,
+        2880
+      ],
+      "webhookId": "quora-wait-webhook-1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "rc1",
+              "leftValue": "={{ $json.groq_score }}",
+              "rightValue": 0.6,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            },
+            {
+              "id": "rc2",
+              "leftValue": "={{ $json.disqualified }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c792136e-7728-4101-9bd3-2a8c64b7f8d4",
+      "name": "Reddit Groq Score 0.6 Check1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1296,
+        2544
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "qc1",
+              "leftValue": "={{ $json.groq_score }}",
+              "rightValue": 0.6,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            },
+            {
+              "id": "qc2",
+              "leftValue": "={{ $json.disqualified }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "78a817fe-4f05-4498-839d-299be87da41d",
+      "name": "Quora Groq Score 0.6 Check1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1312,
+        2864
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "fc1",
+              "leftValue": "={{ $json.gemini_score }}",
+              "rightValue": 0.6,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            },
+            {
+              "id": "fc2",
+              "leftValue": "={{ $json.disqualified }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "392393ad-a8f9-440c-b285-cb20d97869c5",
+      "name": "Reddit Both AIs Confirmed 0.6",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -336,
+        2512
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "qfc1",
+              "leftValue": "={{ $json.gemini_score }}",
+              "rightValue": 0.6,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            },
+            {
+              "id": "qfc2",
+              "leftValue": "={{ $json.disqualified }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2137ed05-5e7f-4a8e-a4ab-5573ccf710ac",
+      "name": "Quora Both AIs Confirmed 0.6",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -320,
+        2832
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "6aaaa8a5-b5ab-46e9-8868-6cb2ba7fa463",
+      "name": "Reddit Wait 5s Rate Limit",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -2032,
+        2864
+      ],
+      "webhookId": "reddit-wait-webhook-1"
+    },
+    {
+      "parameters": {},
+      "id": "a7dc7322-bde2-4808-9bf1-8044b563eed4",
+      "name": "Reddit Wait 5s Rate Limit2",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -2032,
+        2544
+      ],
+      "webhookId": "reddit-wait-webhook-1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Every 4 Hours1": {
+      "main": [
+        [
+          {
+            "node": "Fetch Quora Questions1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Reddit Posts1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Random Warmup Posts1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Warmup Posts1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Warmup Posts1": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Wait 3s Warmup Rate Limit3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 3s Warmup Rate Limit3": {
+      "main": [
+        [
+          {
+            "node": "Generate Casual Warmup Reply1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Casual Warmup Reply1": {
+      "main": [
+        [
+          {
+            "node": "Groq API Warmup Reply Key ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq API Warmup Reply Key ": {
+      "main": [
+        [
+          {
+            "node": "Parse Warmup Reply Text1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Warmup Reply Text1": {
+      "main": [
+        [
+          {
+            "node": "Check If Warmup Post Already Saved1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Warmup Post Already Saved1": {
+      "main": [
+        [
+          {
+            "node": "Warmup Duplicate Check New Post Only1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Warmup Duplicate Check New Post Only1": {
+      "main": [
+        [
+          {
+            "node": "Save to Reddit Warmup Posts Sheet1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Warmup Posts1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Reddit Warmup Posts Sheet1": {
+      "main": [
+        [
+          {
+            "node": "Gmail Alert New Warmup Post1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Alert New Warmup Post1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Warmup Posts1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Reddit Posts1": {
+      "main": [
+        [
+          {
+            "node": "Reddit Get All Known POST IDs1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reddit Get All Known POST IDs1": {
+      "main": [
+        [
+          {
+            "node": "Reddit Pre-filter New Posts Only1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reddit Pre-filter New Posts Only1": {
+      "main": [
+        [
+          {
+            "node": "Reddit Loop Over Posts1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reddit Loop Over Posts1": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Reddit Wait 5s Rate Limit1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reddit Build Groq Body1": {
+      "main": [
+        [
+          {
+            "node": "Reddit Wait 5s Rate Limit2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reddit Parse Groq Score1": {
+      "main": [
+        [
+          {
+            "node": "Reddit Groq Score 0.6 Check1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reddit Build Gemini Crosscheck Body1": {
+      "main": [
+        [
+          {
+            "node": "Reddit Gemini Pro Crosscheck1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reddit Gemini Pro Crosscheck1": {
+      "main": [
+        [
+          {
+            "node": "Reddit Parse Gemini Final Score1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reddit Parse Gemini Final Score1": {
+      "main": [
+        [
+          {
+            "node": "Reddit Both AIs Confirmed 0.6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reddit Check Duplicate in Sheet1": {
+      "main": [
+        [
+          {
+            "node": "Reddit New Post Only1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reddit New Post Only1": {
+      "main": [
+        [
+          {
+            "node": "Reddit Save to Reddit Leads Sheet1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reddit Loop Over Posts1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reddit Save to Reddit Leads Sheet1": {
+      "main": [
+        [
+          {
+            "node": "Reddit Gmail Alert New Reddit Lead1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reddit Gmail Alert New Reddit Lead1": {
+      "main": [
+        [
+          {
+            "node": "Reddit Loop Over Posts1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Quora Questions1": {
+      "main": [
+        [
+          {
+            "node": "Quora Get All Known POST IDs1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quora Get All Known POST IDs1": {
+      "main": [
+        [
+          {
+            "node": "Quora Pre-filter New Posts Only1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quora Pre-filter New Posts Only1": {
+      "main": [
+        [
+          {
+            "node": "Quora Loop Over Posts1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quora Loop Over Posts1": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Quora Wait 5s Rate Limit1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quora Build Groq Body1": {
+      "main": [
+        [
+          {
+            "node": "Reddit Wait 5s Rate Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quora Groq AI Scoring Key ": {
+      "main": [
+        [
+          {
+            "node": "Quora Parse Groq Score1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quora Parse Groq Score1": {
+      "main": [
+        [
+          {
+            "node": "Quora Groq Score 0.6 Check1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quora Build Gemini Crosscheck Body1": {
+      "main": [
+        [
+          {
+            "node": "Quora Gemini Pro Crosscheck1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quora Gemini Pro Crosscheck1": {
+      "main": [
+        [
+          {
+            "node": "Quora Parse Gemini Final Score1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quora Parse Gemini Final Score1": {
+      "main": [
+        [
+          {
+            "node": "Quora Both AIs Confirmed 0.6",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quora Check Duplicate in Sheet1": {
+      "main": [
+        [
+          {
+            "node": "Quora New Post Only1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quora New Post Only1": {
+      "main": [
+        [
+          {
+            "node": "Quora Save to Quora Leads Sheet1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Quora Loop Over Posts1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quora Save to Quora Leads Sheet1": {
+      "main": [
+        [
+          {
+            "node": "Quora Gmail Alert New Quora Lead1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quora Gmail Alert New Quora Lead1": {
+      "main": [
+        [
+          {
+            "node": "Quora Loop Over Posts1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Random Quora Questions1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Quora Warmup Questions1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Quora Warmup Questions1": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Wait 3s Quora Warmup Rate Limit1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 3s Quora Warmup Rate Limit1": {
+      "main": [
+        [
+          {
+            "node": "Generate Casual Quora Warmup Answer1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Casual Quora Warmup Answer1": {
+      "main": [
+        [
+          {
+            "node": "Groq API Quora Warmup Answer Key ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq API Quora Warmup Answer Key ": {
+      "main": [
+        [
+          {
+            "node": "Parse Quora Warmup Answer Text1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Quora Warmup Answer Text1": {
+      "main": [
+        [
+          {
+            "node": "Check If Quora Warmup Already Saved1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Quora Warmup Already Saved1": {
+      "main": [
+        [
+          {
+            "node": "Quora Warmup Duplicate Check New Only1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quora Warmup Duplicate Check New Only1": {
+      "main": [
+        [
+          {
+            "node": "Save to Quora Warmup Posts Sheet1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Quora Warmup Questions1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Quora Warmup Posts Sheet1": {
+      "main": [
+        [
+          {
+            "node": "Gmail Alert New Quora Warmup Post1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Alert New Quora Warmup Post1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Quora Warmup Questions1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reddit Groq AI Scoring Key": {
+      "main": [
+        [
+          {
+            "node": "Reddit Parse Groq Score1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reddit Wait 5s Rate Limit1": {
+      "main": [
+        [
+          {
+            "node": "Reddit Build Groq Body1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quora Wait 5s Rate Limit1": {
+      "main": [
+        [
+          {
+            "node": "Quora Build Groq Body1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reddit Groq Score 0.6 Check1": {
+      "main": [
+        [
+          {
+            "node": "Reddit Build Gemini Crosscheck Body1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reddit Loop Over Posts1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quora Groq Score 0.6 Check1": {
+      "main": [
+        [
+          {
+            "node": "Quora Build Gemini Crosscheck Body1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Quora Loop Over Posts1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reddit Both AIs Confirmed 0.6": {
+      "main": [
+        [
+          {
+            "node": "Reddit Check Duplicate in Sheet1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reddit Loop Over Posts1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quora Both AIs Confirmed 0.6": {
+      "main": [
+        [
+          {
+            "node": "Quora Check Duplicate in Sheet1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Quora Loop Over Posts1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reddit Wait 5s Rate Limit": {
+      "main": [
+        [
+          {
+            "node": "Quora Groq AI Scoring Key ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reddit Wait 5s Rate Limit2": {
+      "main": [
+        [
+          {
+            "node": "Reddit Groq AI Scoring Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "73ad37bce0582a061a84c2a07b4166ac50a55dc49f40112c477e91cddc0fd667"
+  },
+  "nodeGroups": [],
+  "tags": []
+}
